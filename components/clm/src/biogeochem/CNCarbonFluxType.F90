@@ -12,12 +12,16 @@ module CNCarbonFluxType
   use ch4varcon              , only : allowlakeprod
   use pftvarcon              , only : npcropmin
   use CNDecompCascadeConType , only : decomp_cascade_con
-  use VegetationType              , only : veg_pp                
+  use VegetationType         , only : veg_pp                
   use ColumnType             , only : col_pp                
   use LandunitType           , only : lun_pp
   use clm_varctl             , only : nu_com
   ! bgc interface & pflotran
   use clm_varctl             , only : use_clm_interface, use_pflotran, pf_cmode, use_vertsoilc
+  !---L.Xu@2017/11
+!  use CNStateType            , only : cnstate_type
+  use pftvarcon              , only : nc3crop,nc4_grass
+  use clm_varpar             , only : max_patch_per_col
   ! 
   ! !PUBLIC TYPES:
   implicit none
@@ -262,6 +266,10 @@ module CNCarbonFluxType
 
      ! fire code
      real(r8), pointer :: fire_closs_patch                          (:)     ! (gC/m2/s) total patch-level fire C loss 
+!beg---L. Xu @ 2017/11
+     real(r8), pointer :: fire_closs_patch_ncrop                    (:)     ! (gC/m2/s) total patch-level fire C loss from non-crop fires
+     real(r8), pointer :: fire_closs_patch_crop                     (:)     ! (gC/m2/s) total patch-level fire C loss from crop fires
+!end---L. Xu @ 2017/11
 
      ! For aerenchyma calculations in CH4 code
      real(r8), pointer :: annavg_agnpp_patch                        (:)     ! (gC/m2/s) annual average aboveground NPP
@@ -301,6 +309,10 @@ module CNCarbonFluxType
      ! column-level fire fluxes
      real(r8), pointer :: m_decomp_cpools_to_fire_vr_col            (:,:,:) ! vertically-resolved decomposing C fire loss (gC/m3/s)
      real(r8), pointer :: m_decomp_cpools_to_fire_col               (:,:)   ! vertically-integrated (diagnostic) decomposing C fire loss (gC/m2/s)
+!beg---L.Xu@2017/11
+     real(r8), pointer :: m_decomp_cpools_to_fire_col_ncrop         (:,:)   ! vertically-integrated (diagnostic) decomposing C fire loss from non-crop fires (gC/m2/s)
+     real(r8), pointer :: m_decomp_cpools_to_fire_col_crop          (:,:)   ! vertically-integrated (diagnostic) decomposing C fire loss from crop-fires (gC/m2/s)
+!end---L.Xu@2017/11
      real(r8), pointer :: m_c_to_litr_met_fire_col                  (:,:)   ! C from leaf, froot, xfer and storage C to litter labile C by fire (gC/m3/s) 
      real(r8), pointer :: m_c_to_litr_cel_fire_col                  (:,:)   ! C from leaf, froot, xfer and storage C to litter cellulose C by fire (gC/m3/s) 
      real(r8), pointer :: m_c_to_litr_lig_fire_col                  (:,:)   ! C from leaf, froot, xfer and storage C to litter lignin C by fire (gC/m3/s) 
@@ -374,6 +386,15 @@ module CNCarbonFluxType
      real(r8), pointer :: fire_closs_p2c_col                        (:)     ! column (gC/m2/s) patch2col averaged column-level fire C loss (p2c)
      real(r8), pointer :: fire_closs_col                            (:)     ! column (gC/m2/s) total patch-level fire C loss 
      real(r8), pointer :: fire_decomp_closs_col                     (:)     ! column (gC/m2/s) carbon loss to fire for decomposable pools
+!beg---L.Xu@2017/11
+     real(r8), pointer :: fire_closs_p2c_col_ncrop                        (:)     ! column (gC/m2/s) patch2col averaged column-level fire C loss (p2c)
+     real(r8), pointer :: fire_closs_p2c_col_crop                        (:)     ! column (gC/m2/s) patch2col averaged column-level fire C loss (p2c)
+     real(r8), pointer :: fire_closs_col_ncrop                            (:)     ! column (gC/m2/s) total patch-level fire C loss 
+     real(r8), pointer :: fire_closs_col_crop                            (:)     ! column (gC/m2/s) total patch-level fire C loss 
+     real(r8), pointer :: fire_decomp_closs_col_ncrop                     (:)     ! column (gC/m2/s) carbon loss to fire for decomposable pools
+     real(r8), pointer :: fire_decomp_closs_col_crop                     (:)     ! column (gC/m2/s) carbon loss to fire for decomposable pools
+     real(r8), pointer :: col_cropf                                 (:)     ! col crop fraction in veg column (0-1)
+!end---L.Xu@2017/11
      real(r8), pointer :: litfall_col                               (:)     ! column (gC/m2/s) total patch-level litterfall C loss (p2c)       
      real(r8), pointer :: vegfire_col                               (:)     ! column (gC/m2/s) patch-level fire loss (obsolete, mark for removal) (p2c)
      real(r8), pointer :: wood_harvestc_col                         (:)     ! column (p2c)                                                  
@@ -633,6 +654,10 @@ contains
         allocate(this%xsmrpool_turnover_patch                   (begp:endp)) ; this%xsmrpool_turnover_patch                   (:) = nan
 
         allocate(this%fire_closs_patch                          (begp:endp)) ; this%fire_closs_patch                          (:) = nan
+!beg---L.Xu@2017/11
+        allocate(this%fire_closs_patch_ncrop                    (begp:endp)) ; this%fire_closs_patch_ncrop                    (:) = nan
+        allocate(this%fire_closs_patch_crop                     (begp:endp)) ; this%fire_closs_patch_crop                     (:) = nan
+!end---L.Xu@2017/11
         allocate(this%cpool_to_grainc_patch                     (begp:endp)) ; this%cpool_to_grainc_patch                     (:) = nan
         allocate(this%cpool_to_grainc_storage_patch             (begp:endp)) ; this%cpool_to_grainc_storage_patch             (:) = nan
         allocate(this%livestemc_to_litter_patch                 (begp:endp)) ; this%livestemc_to_litter_patch                 (:) = nan
@@ -728,6 +753,15 @@ contains
      allocate(this%fire_closs_p2c_col                (begc:endc))                  ; this%fire_closs_p2c_col        (:)  =nan
      allocate(this%fire_closs_col                    (begc:endc))                  ; this%fire_closs_col            (:)  =nan
      allocate(this%fire_decomp_closs_col             (begc:endc))                  ; this%fire_decomp_closs_col     (:)  =nan
+!beg---L.Xu@2017/11
+     allocate(this%fire_closs_p2c_col_ncrop          (begc:endc))                  ; this%fire_closs_p2c_col_ncrop       (:)  =nan
+     allocate(this%fire_closs_col_ncrop              (begc:endc))                  ; this%fire_closs_col_ncrop           (:)  =nan
+     allocate(this%fire_decomp_closs_col_ncrop       (begc:endc))                  ; this%fire_decomp_closs_col_ncrop    (:)  =nan
+     allocate(this%fire_closs_p2c_col_crop           (begc:endc))                  ; this%fire_closs_p2c_col_crop        (:)  =nan
+     allocate(this%fire_closs_col_crop               (begc:endc))                  ; this%fire_closs_col_crop            (:)  =nan
+     allocate(this%fire_decomp_closs_col_crop        (begc:endc))                  ; this%fire_decomp_closs_col_crop     (:)  =nan
+     allocate(this%col_cropf                         (begc:endc))                  ; this%fire_closs_col_crop            (:)  =nan
+!end---L.Xu@2017/11
      allocate(this%litfall_col                       (begc:endc))                  ; this%litfall_col               (:)  =nan
      allocate(this%vegfire_col                       (begc:endc))                  ; this%vegfire_col               (:)  =nan
      allocate(this%wood_harvestc_col                 (begc:endc))                  ; this%wood_harvestc_col         (:)  =nan
@@ -747,6 +781,13 @@ contains
 
      allocate(this%m_decomp_cpools_to_fire_col(begc:endc,1:ndecomp_pools))                                     
      this%m_decomp_cpools_to_fire_col(:,:)= nan
+!beg---L.Xu@2017/11
+     allocate(this%m_decomp_cpools_to_fire_col_ncrop(begc:endc,1:ndecomp_pools))                                     
+     this%m_decomp_cpools_to_fire_col_ncrop(:,:)= nan
+
+     allocate(this%m_decomp_cpools_to_fire_col_crop(begc:endc,1:ndecomp_pools))                                     
+     this%m_decomp_cpools_to_fire_col_crop(:,:)= nan
+!end---L.Xu@2017/11
 
      allocate(this%decomp_cpools_sourcesink_col(begc:endc,1:nlevdecomp_full,1:ndecomp_pools))                  
      this%decomp_cpools_sourcesink_col(:,:,:)= nan
@@ -1591,8 +1632,20 @@ contains
 
        this%fire_closs_patch(begp:endp) = spval
        call hist_addfld1d (fname='PFT_FIRE_CLOSS', units='gC/m^2/s', &
-            avgflag='A', long_name='total patch-level fire C loss for non-peat fires outside land-type converted region', &
+            avgflag='A', long_name='total patch-level fire C loss for fires outside land-type converted region', &
             ptr_patch=this%fire_closs_patch)
+
+!beg---L.Xu@2017/11
+       this%fire_closs_patch_ncrop(begp:endp) = spval
+       call hist_addfld1d (fname='PFT_FIRE_CLOSS_NCROP', units='gC/m^2/s', &
+            avgflag='A', long_name='total patch-level non-crop fire C loss for fires outside land-type converted region', &
+            ptr_patch=this%fire_closs_patch_ncrop)
+
+       this%fire_closs_patch_crop(begp:endp) = spval
+       call hist_addfld1d (fname='PFT_FIRE_CLOSS_CROP', units='gC/m^2/s', &
+            avgflag='A', long_name='total patch-level crop fire C loss for fires outside land-type converted region', &
+            ptr_patch=this%fire_closs_patch_crop)
+!end---L.Xu@2017/11
 
        this%availc_patch(begp:endp) = spval
        call hist_addfld1d (fname='AVAILC', units='gC/m^2/s', &
@@ -2195,6 +2248,16 @@ contains
        call hist_addfld1d (fname='C13_PFT_FIRE_CLOSS', units='gC13/m^2/s', &
             avgflag='A', long_name='C13 total patch-level fire C loss', &
             ptr_patch=this%fire_closs_patch)
+!beg---L.Xu@2017/11
+       this%fire_closs_patch_ncrop(begp:endp) = spval
+       call hist_addfld1d (fname='C13_PFT_FIRE_CLOSS_NCROP', units='gC13/m^2/s', &
+            avgflag='A', long_name='C13 total patch-level non-crop fire C loss', &
+            ptr_patch=this%fire_closs_patch_ncrop)
+       this%fire_closs_patch_crop(begp:endp) = spval
+       call hist_addfld1d (fname='C13_PFT_FIRE_CLOSS_CROP', units='gC13/m^2/s', &
+            avgflag='A', long_name='C13 total patch-level crop fire C loss', &
+            ptr_patch=this%fire_closs_patch_crop)
+!end---L.Xu@2017/11
     endif
 
     !-------------------------------
@@ -2751,6 +2814,16 @@ contains
        call hist_addfld1d (fname='C14_PFT_FIRE_CLOSS', units='gC14/m^2/s', &
             avgflag='A', long_name='C14 total patch-level fire C loss', &
             ptr_patch=this%fire_closs_patch)
+!beg---L.Xu@2017/11
+       this%fire_closs_patch_ncrop(begp:endp) = spval
+       call hist_addfld1d (fname='C14_PFT_FIRE_CLOSS_NCROP', units='gC14/m^2/s', &
+            avgflag='A', long_name='C14 total patch-level non-crop fire C loss', &
+            ptr_patch=this%fire_closs_patch_ncrop)
+       this%fire_closs_patch_crop(begp:endp) = spval
+       call hist_addfld1d (fname='C14_PFT_FIRE_CLOSS_CROP', units='gC14/m^2/s', &
+            avgflag='A', long_name='C14 total patch-level crop fire C loss', &
+            ptr_patch=this%fire_closs_patch_crop)
+!end---L.Xu@2017/11
     endif
 
     !-------------------------------
@@ -2799,16 +2872,27 @@ contains
             ptr_col=this%somhr_col)
 
        ! F. Li and S. Levis
+!       this%lf_conv_cflux_col(begc:endc) = spval
+!     call hist_addfld1d (fname='LF_CONV_CFLUX', units='gC/m^2/s', &
+!          avgflag='A', long_name='conversion carbon due to BET and BDT area decreasing', &
+!          ptr_col=this%lf_conv_cflux_col, default='inactive')   
+
+!       this%somc_fire_col(begc:endc) = spval
+!       call hist_addfld1d (fname='SOMC_FIRE', units='gC/m^2/s', &
+!            avgflag='A', long_name='C loss due to peat burning', &
+!            ptr_col=this%somc_fire_col, default='inactive')
+
+!beg---L.Xu@2017/11
        this%lf_conv_cflux_col(begc:endc) = spval
        call hist_addfld1d (fname='LF_CONV_CFLUX', units='gC/m^2/s', &
-            avgflag='A', long_name='conversion carbon due to BET and BDT area decreasing', &
-            ptr_col=this%lf_conv_cflux_col, default='inactive')   
+            avgflag='A', long_name='conversion carbon due to BET and BDT area decreasing (deforestation fires)', &
+            ptr_col=this%lf_conv_cflux_col)   
 
        this%somc_fire_col(begc:endc) = spval
        call hist_addfld1d (fname='SOMC_FIRE', units='gC/m^2/s', &
-            avgflag='A', long_name='C loss due to peat burning', &
-            ptr_col=this%somc_fire_col, default='inactive')
-
+            avgflag='A', long_name='C loss due to peat burning (peat fires)', &
+            ptr_col=this%somc_fire_col)
+!end---L.Xu@2017/11
 
        this%m_decomp_cpools_to_fire_col(begc:endc,:)      = spval
        this%m_decomp_cpools_to_fire_vr_col(begc:endc,:,:) = spval
@@ -3045,17 +3129,55 @@ contains
             ptr_col=this%nee_col)
 
 
+!       this%fire_closs_col(begc:endc) = spval
+!       call hist_addfld1d (fname='COL_FIRE_CLOSS', units='gC/m^2/s', &
+!            avgflag='A', long_name='total column-level fire C loss for non-peat fires outside land-type converted region', &
+!            ptr_col=this%fire_closs_col, default='inactive')
+!
+!       this%fire_decomp_closs_col(begc:endc) = spval
+!       call hist_addfld1d (fname='DECOMP_FIRE_CLOSS', units='gC/m^2/s', &
+!          avgflag='A', long_name='decomposable fire C loss for non-peat fires outside land-type converted region', &
+!          ptr_col=this%fire_decomp_closs_col, default='inactive')
+
+!beg---L.Xu@2017/11
+!ncrop+crop
        this%fire_closs_col(begc:endc) = spval
        call hist_addfld1d (fname='COL_FIRE_CLOSS', units='gC/m^2/s', &
             avgflag='A', long_name='total column-level fire C loss for non-peat fires outside land-type converted region', &
-            ptr_col=this%fire_closs_col, default='inactive')
+            ptr_col=this%fire_closs_col)
 
        this%fire_decomp_closs_col(begc:endc) = spval
        call hist_addfld1d (fname='DECOMP_FIRE_CLOSS', units='gC/m^2/s', &
           avgflag='A', long_name='decomposable fire C loss for non-peat fires outside land-type converted region', &
-          ptr_col=this%fire_decomp_closs_col, default='inactive')
+          ptr_col=this%fire_decomp_closs_col)
+!ncrop
+        this%fire_closs_col_ncrop(begc:endc) = spval
+       call hist_addfld1d (fname='COL_FIRE_CLOSS_NCROP', units='gC/m^2/s', &
+            avgflag='A', long_name='total column-level fire C loss for non-crop fires outside land-type converted region', &
+            ptr_col=this%fire_closs_col_ncrop)
 
-       this%dwt_seedc_to_leaf_col(begc:endc) = spval
+       this%fire_decomp_closs_col_ncrop(begc:endc) = spval
+       call hist_addfld1d (fname='DECOMP_FIRE_CLOSS_NCROP', units='gC/m^2/s', &
+          avgflag='A', long_name='decomposable fire C loss for non-crop fires outside land-type converted region', &
+          ptr_col=this%fire_decomp_closs_col_ncrop)
+!crop
+       this%fire_closs_col_crop(begc:endc) = spval
+       call hist_addfld1d (fname='COL_FIRE_CLOSS_CROP', units='gC/m^2/s', &
+            avgflag='A', long_name='total column-level fire C loss for crop fires outside land-type converted region', &
+            ptr_col=this%fire_closs_col_crop)
+
+       this%fire_decomp_closs_col_crop(begc:endc) = spval
+       call hist_addfld1d (fname='DECOMP_FIRE_CLOSS_CROP', units='gC/m^2/s', &
+          avgflag='A', long_name='decomposable fire C loss for crop fires outside land-type converted region', &
+          ptr_col=this%fire_decomp_closs_col_crop)
+
+       this%col_cropf(begc:endc) = spval
+       call hist_addfld1d (fname='COL_CROPF', units='fraction/s', &
+            avgflag='A', long_name='total column-level crop fraction', &
+            ptr_col=this%col_cropf)
+!end---L.Xu@2017/11
+
+      this%dwt_seedc_to_leaf_col(begc:endc) = spval
        call hist_addfld1d (fname='DWT_SEEDC_TO_LEAF', units='gC/m^2/s', &
             avgflag='A', long_name='seed source to patch-level leaf', &
             ptr_col=this%dwt_seedc_to_leaf_col, default='inactive')
@@ -3723,7 +3845,6 @@ contains
 
     do fc = 1,num_special_col
        c = special_col(fc)
-       
        this%dwt_closs_col(c)   = 0._r8
        this%landuseflux_col(c) = 0._r8
        this%landuptake_col(c)  = 0._r8
@@ -4160,6 +4281,10 @@ contains
           this%cinputs_patch(i)                             = value_patch
           this%coutputs_patch(i)                            = value_patch
           this%fire_closs_patch(i)                          = value_patch
+!beg---L.Xu@2017/11
+          this%fire_closs_patch_ncrop(i)                    = value_patch
+          this%fire_closs_patch_crop(i)                     = value_patch
+!end---L.Xu@2017/11
           this%frootc_alloc_patch(i)                        = value_patch
           this%frootc_loss_patch(i)                         = value_patch
           this%leafc_alloc_patch(i)                         = value_patch
@@ -4247,6 +4372,10 @@ contains
           i = filter_column(fi)
           this%decomp_cpools_leached_col(i,k) = value_column
           this%m_decomp_cpools_to_fire_col(i,k) = value_column
+!beg---L.Xu@2017/11
+          this%m_decomp_cpools_to_fire_col_ncrop(i,k) = value_column
+          this%m_decomp_cpools_to_fire_col_crop(i,k) = value_column
+!end---L.Xu@2017/11
           this%bgc_cpool_ext_inputs_vr_col(i,:, k) = value_column
           this%bgc_cpool_ext_loss_vr_col(i,:, k) = value_column
        end do
@@ -4275,6 +4404,11 @@ contains
        this%nbp_col(i)                       = value_column
        this%nee_col(i)                       = value_column
        this%fire_closs_col(i)                = value_column
+!beg---L.Xu@2017/11
+       this%fire_closs_col_ncrop(i)          = value_column
+       this%fire_closs_col_crop(i)           = value_column
+       this%col_cropf(i)                     = value_column
+!end---L.Xu@2017/11
        this%cwdc_hr_col(i)                   = value_column
        this%cwdc_loss_col(i)                 = value_column
        this%litterc_loss_col(i)              = value_column
@@ -4371,8 +4505,11 @@ contains
   end subroutine ZeroDwt
 
   !-----------------------------------------------------------------------
+!neg---L.Xu@2017/11
   subroutine Summary(this, bounds, num_soilc, filter_soilc, num_soilp, filter_soilp, &
        isotope)
+!  subroutine Summary(this, bounds, num_soilc, filter_soilc, num_soilp, filter_soilp, &
+!       isotope,cnstate_vars)
     !
     ! !DESCRIPTION:
     ! On the radiation time step, perform patch and column-level carbon summary calculations
@@ -4395,6 +4532,8 @@ contains
     integer                , intent(in)    :: num_soilp       ! number of soil patches in filter
     integer                , intent(in)    :: filter_soilp(:) ! filter for soil patches
     character(len=*)       , intent(in)    :: isotope   
+!beg---L.Xu@2017/11
+!    type (cnstate_type)    , intent(in)    :: cnstate_vars
     !
     ! !LOCAL VARIABLES:
     real(r8) :: nfixlags, dtime ! temp variables for making lagged npp
@@ -4402,12 +4541,16 @@ contains
     integer  :: fp,fc           ! lake filter indices
     real(r8) :: maxdepth        ! depth to integrate soil variables
     integer  :: nlev
+!---L.Xu@2017/11
+    integer  :: pi       ! indices
     !-----------------------------------------------------------------------
 
     associate(& 
          is_litter =>    decomp_cascade_con%is_litter , & ! Input:  [logical (:) ]  TRUE => pool is a litter pool
          is_soil   =>    decomp_cascade_con%is_soil   , & ! Input:  [logical (:) ]  TRUE => pool is a soil pool  
-         is_cwd    =>    decomp_cascade_con%is_cwd      & ! Input:  [logical (:) ]  TRUE => pool is a cwd pool   
+         is_cwd    =>    decomp_cascade_con%is_cwd     & ! Input:  [logical (:) ]  TRUE => pool is a cwd pool   
+!---L.Xu@2017/11
+!         cropf_col =>    cnstate_vars%cropf_col         & ! Input:  [real(r8) (:)     ]  cropland fraction in veg column                   
          )
 
       ! Note that some of these variables and summary statistics are relevant to fates
@@ -4639,6 +4782,60 @@ contains
             this%m_gresp_storage_to_fire_patch(p)        + &
             this%m_gresp_xfer_to_fire_patch(p)
 
+!beg---L. Xu @ 2017/11
+!Seperate patch-level carbon losses to fires into two categories: crop fires and non-crop fires
+        c = veg_pp%column(p)
+
+        if( veg_pp%itype(p) < nc3crop .and. this%col_cropf(c) < 1.0)then
+!        if( veg_pp%itype(p) < nc3crop )then
+           ! For non-crop (bare-soil and natural vegetation, including trees, shrubs and grass)
+       this%fire_closs_patch_ncrop(p) = &
+            this%m_leafc_to_fire_patch(p)                + &
+            this%m_leafc_storage_to_fire_patch(p)        + &
+            this%m_leafc_xfer_to_fire_patch(p)           + &
+            this%m_frootc_to_fire_patch(p)               + &
+            this%m_frootc_storage_to_fire_patch(p)       + &
+            this%m_frootc_xfer_to_fire_patch(p)          + &
+            this%m_livestemc_to_fire_patch(p)            + &
+            this%m_livestemc_storage_to_fire_patch(p)    + &
+            this%m_livestemc_xfer_to_fire_patch(p)       + &
+            this%m_deadstemc_to_fire_patch(p)            + &
+            this%m_deadstemc_storage_to_fire_patch(p)    + &
+            this%m_deadstemc_xfer_to_fire_patch(p)       + &
+            this%m_livecrootc_to_fire_patch(p)           + &
+            this%m_livecrootc_storage_to_fire_patch(p)   + &
+            this%m_livecrootc_xfer_to_fire_patch(p)      + &
+            this%m_deadcrootc_to_fire_patch(p)           + &
+            this%m_deadcrootc_storage_to_fire_patch(p)   + &
+            this%m_deadcrootc_xfer_to_fire_patch(p)      + &
+            this%m_gresp_storage_to_fire_patch(p)        + &
+            this%m_gresp_xfer_to_fire_patch(p)
+        else
+           ! For crops
+       this%fire_closs_patch_crop(p) = &
+            this%m_leafc_to_fire_patch(p)                + &
+            this%m_leafc_storage_to_fire_patch(p)        + &
+            this%m_leafc_xfer_to_fire_patch(p)           + &
+            this%m_frootc_to_fire_patch(p)               + &
+            this%m_frootc_storage_to_fire_patch(p)       + &
+            this%m_frootc_xfer_to_fire_patch(p)          + &
+            this%m_livestemc_to_fire_patch(p)            + &
+            this%m_livestemc_storage_to_fire_patch(p)    + &
+            this%m_livestemc_xfer_to_fire_patch(p)       + &
+            this%m_deadstemc_to_fire_patch(p)            + &
+            this%m_deadstemc_storage_to_fire_patch(p)    + &
+            this%m_deadstemc_xfer_to_fire_patch(p)       + &
+            this%m_livecrootc_to_fire_patch(p)           + &
+            this%m_livecrootc_storage_to_fire_patch(p)   + &
+            this%m_livecrootc_xfer_to_fire_patch(p)      + &
+            this%m_deadcrootc_to_fire_patch(p)           + &
+            this%m_deadcrootc_storage_to_fire_patch(p)   + &
+            this%m_deadcrootc_xfer_to_fire_patch(p)      + &
+            this%m_gresp_storage_to_fire_patch(p)        + &
+            this%m_gresp_xfer_to_fire_patch(p)
+        end if
+!end---L.Xu @ 2017/11
+
        if ( crop_prog .and. veg_pp%itype(p) >= npcropmin )then
 
           this%litfall_patch(p) =                  &
@@ -4751,6 +4948,16 @@ contains
     call p2c(bounds, num_soilc, filter_soilc, &
          this%fire_closs_patch(bounds%begp:bounds%endp), &
          this%fire_closs_p2c_col(bounds%begc:bounds%endc))
+
+!beg---L.Xu@2017/11
+    call p2c(bounds, num_soilc, filter_soilc, &
+         this%fire_closs_patch_ncrop(bounds%begp:bounds%endp), &
+         this%fire_closs_p2c_col_ncrop(bounds%begc:bounds%endc))
+
+    call p2c(bounds, num_soilc, filter_soilc, &
+         this%fire_closs_patch_crop(bounds%begp:bounds%endp), &
+         this%fire_closs_p2c_col_crop(bounds%begc:bounds%endc))
+!end---L.Xu@2017/11
 
     call p2c(bounds, num_soilc, filter_soilc, &
          this%litfall_patch(bounds%begp:bounds%endp), &
@@ -4876,7 +5083,52 @@ contains
              this%m_decomp_cpools_to_fire_col(c,l) = &
                   this%m_decomp_cpools_to_fire_col(c,l) + &
                   this%m_decomp_cpools_to_fire_vr_col(c,j,l)*dzsoi_decomp(j)
-          end do
+         end do
+       end do
+    end do
+!beg---L.Xu@2017/11
+    ! vertically integrate column-level carbon fire losses from non-crop and crop fires
+     !
+     ! Calculate fraction of crop (cropf_col) in vegetated column
+     !
+     do fc = 1,num_soilc
+        c = filter_soilc(fc)
+        this%col_cropf(c) = 0._r8 
+     end do
+     do pi = 1,max_patch_per_col
+        do fc = 1,num_soilc
+           c = filter_soilc(fc)
+           if (pi <=  col_pp%npfts(c)) then
+              p = col_pp%pfti(c) + pi - 1
+              ! For crop veg types
+              if( veg_pp%itype(p) > nc4_grass )then
+                 this%col_cropf(c) = this%col_cropf(c) + veg_pp%wtcol(p)
+              end if
+            end if
+        end do
+     end do
+
+    do l = 1, ndecomp_pools
+       do j = 1,nlev
+             do fc = 1,num_soilc
+                c = filter_soilc(fc)
+		this%m_decomp_cpools_to_fire_col_ncrop(c,l) = 0._r8
+		this%m_decomp_cpools_to_fire_col_crop(c,l) = 0._r8
+                do p=col_pp%pfti(c),col_pp%pftf(c)
+                   if( veg_pp%itype(p) < nc3crop .and. veg_pp%wtcol(p) > 0._r8 .and. this%col_cropf(c) < 1._r8 )then
+        	       this%m_decomp_cpools_to_fire_col_ncrop(c,l) = &
+                	    this%m_decomp_cpools_to_fire_col_ncrop(c,l) + &
+                	    this%m_decomp_cpools_to_fire_vr_col(c,j,l)*dzsoi_decomp(j)*veg_pp%wtcol(p)/(1.0_r8-this%col_cropf(c))
+		   else
+		       if (veg_pp%wtcol(p) > 0._r8 .and. this%col_cropf(c) > 0._r8) then
+        		   this%m_decomp_cpools_to_fire_col_crop(c,l) = &
+                		this%m_decomp_cpools_to_fire_col_crop(c,l) + &
+                		this%m_decomp_cpools_to_fire_vr_col(c,j,l)*dzsoi_decomp(j)*veg_pp%wtcol(p)/this%col_cropf(c)
+		       end if	    
+		   end if
+		end do   
+!end---L.Xu@2017/11
+         end do
        end do
     end do
 
@@ -4890,6 +5142,18 @@ contains
                this%fire_closs_col(c) + &
                this%m_decomp_cpools_to_fire_col(c,l)
        end do
+!beg---L.Xu@2017/11
+       this%fire_closs_col_ncrop(c) = this%fire_closs_p2c_col_ncrop(c) 
+       this%fire_closs_col_crop(c) = this%fire_closs_p2c_col_crop(c) 
+       do l = 1, ndecomp_pools
+          this%fire_closs_col_ncrop(c) = &
+               this%fire_closs_col_ncrop(c) + &
+               this%m_decomp_cpools_to_fire_col_ncrop(c,l)
+          this%fire_closs_col_crop(c) = &
+               this%fire_closs_col_crop(c) + &
+               this%m_decomp_cpools_to_fire_col_crop(c,l)
+       end do
+!end---L.Xu@2017/11
 
        ! column-level carbon losses due to landcover change
        this%dwt_closs_col(c) = &
