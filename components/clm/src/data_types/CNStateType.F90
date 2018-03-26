@@ -99,6 +99,8 @@ module CNStateType
 
      ! Fire
      real(r8) , pointer :: nfire_col                   (:)     ! col fire counts (count/km2/sec), valid only in Reg. C
+     real(r8) , pointer :: nfire_In_col                   (:)     ! col fire counts (count/km2/sec), valid only in Reg. C
+     real(r8) , pointer :: nfire_Ia_col                   (:)     ! col fire counts (count/km2/sec), valid only in Reg. C
      real(r8) , pointer :: fsr_col                     (:)     ! col fire spread rate at column level (m/s)
      real(r8) , pointer :: fd_col                      (:)     ! col fire duration at column level (hr)
      real(r8) , pointer :: lfc_col                     (:)     ! col conversion area fraction of BET and BDT that haven't burned before (/timestep)
@@ -109,6 +111,11 @@ module CNStateType
      real(r8) , pointer :: cropf_col                   (:)     ! col crop fraction in veg column (0-1)
      real(r8) , pointer :: baf_crop_col                (:)     ! col baf for cropland(/sec)
      real(r8) , pointer :: baf_peatf_col               (:)     ! col baf for peatland (/sec)
+     !beg---L. Xu @ 2017/11
+     ! output fires from non-peat fires and deforestation fires in the tropical closed forests
+     real(r8), pointer :: baf_ncropf_col               (:)     ! col baf for non-peat fires (fraction/sec)
+     real(r8), pointer :: baf_deforestf_col            (:)     ! col baf for deforestation fires (fraction/sec)
+     !end---L. Xu @ 2017/11
      real(r8) , pointer :: fbac_col                    (:)     ! col total burned area out of conversion (/sec)
      real(r8) , pointer :: fbac1_col                   (:)     ! col burned area out of conversion region due to land use fire (/sec)
      real(r8) , pointer :: wtlf_col                    (:)     ! col fractional coverage of non-crop Patches (0-1)
@@ -170,6 +177,7 @@ module CNStateType
      real(r8), pointer :: occp_col             (:)   ! occluded phosphorus g/m2
      real(r8), pointer :: prip_col             (:)   ! parent material phosphorus g/m2
      logical           :: pdatasets_present          ! surface dataset has p pools info
+
    contains
 
      procedure, public  :: Init         
@@ -281,6 +289,8 @@ contains
     allocate(this%annavg_t2m_patch    (begp:endp))                   ; this%annavg_t2m_patch    (:)   = nan
 
     allocate(this%nfire_col           (begc:endc))                   ; this%nfire_col           (:)   = spval
+    allocate(this%nfire_In_col           (begc:endc))                   ; this%nfire_In_col           (:)   = spval
+    allocate(this%nfire_Ia_col           (begc:endc))                   ; this%nfire_Ia_col           (:)   = spval
     allocate(this%fsr_col             (begc:endc))                   ; this%fsr_col             (:)   = nan
     allocate(this%fd_col              (begc:endc))                   ; this%fd_col              (:)   = nan
     allocate(this%lfc_col             (begc:endc))                   ; this%lfc_col             (:)   = spval
@@ -291,6 +301,10 @@ contains
     allocate(this%cropf_col           (begc:endc))                   ; this%cropf_col           (:)   = nan
     allocate(this%baf_crop_col        (begc:endc))                   ; this%baf_crop_col        (:)   = nan
     allocate(this%baf_peatf_col       (begc:endc))                   ; this%baf_peatf_col       (:)   = nan
+!beg---L. Xu @2017/11
+    allocate(this%baf_ncropf_col      (begc:endc))                   ; this%baf_ncropf_col      (:)   = nan
+    allocate(this%baf_deforestf_col   (begc:endc))                   ; this%baf_deforestf_col   (:)   = nan
+!end---L. Xu @2017/11
     allocate(this%fbac_col            (begc:endc))                   ; this%fbac_col            (:)   = nan
     allocate(this%fbac1_col           (begc:endc))                   ; this%fbac1_col           (:)   = nan
     allocate(this%wtlf_col            (begc:endc))                   ; this%wtlf_col            (:)   = nan
@@ -492,6 +506,16 @@ contains
     call hist_addfld1d (fname='NFIRE',  units='counts/km2/sec', &
          avgflag='A', long_name='fire counts valid only in Reg.C', &
          ptr_col=this%nfire_col)
+!L.Xu 17/11/17
+    this%nfire_In_col(begc:endc) = spval
+    call hist_addfld1d (fname='NFIRE_In',  units='counts/km2/sec', &
+         avgflag='A', long_name='fire counts valid only in Reg.C from the lightning', &
+         ptr_col=this%nfire_In_col)
+
+    this%nfire_Ia_col(begc:endc) = spval
+    call hist_addfld1d (fname='NFIRE_Ia',  units='counts/km2/sec', &
+         avgflag='A', long_name='fire counts valid only in Reg.C from human activities', &
+         ptr_col=this%nfire_Ia_col)
 
     this%farea_burned_col(begc:endc) = spval
     call hist_addfld1d (fname='FAREA_BURNED',  units='proportion', &
@@ -507,6 +531,17 @@ contains
     call hist_addfld1d (fname='BAF_PEATF',  units='proportion/sec', &
          avgflag='A', long_name='fractional area burned in peatland', &
          ptr_col=this%baf_peatf_col)
+!beg---L. Xu @ 2017/11
+    this%baf_ncropf_col(begc:endc) = spval
+    call hist_addfld1d (fname='BAF_NCROPF',  units='proportion/sec', &
+         avgflag='A', long_name='fractional area burned from non-crop fires', &
+         ptr_col=this%baf_ncropf_col)
+
+    this%baf_deforestf_col(begc:endc) = spval
+    call hist_addfld1d (fname='BAF_DEFORESTF',  units='proportion/sec', &
+         avgflag='A', long_name='fractional area burned from deforestation fires', &
+         ptr_col=this%baf_deforestf_col)
+!end---L. Xu @ 2017/11
  
     this%annavg_t2m_patch(begp:endp) = spval
     call hist_addfld1d (fname='ANNAVG_T2M', units='K', &
@@ -938,8 +973,14 @@ contains
           this%annavg_t2m_col     (c) = spval
           this%scalaravg_col      (c) = spval
           this%nfire_col          (c) = spval
+          this%nfire_In_col          (c) = spval
+          this%nfire_Ia_col          (c) = spval
           this%baf_crop_col       (c) = spval
           this%baf_peatf_col      (c) = spval
+!beg---L. Xu @ 2017/11
+          this%baf_ncropf_col     (c) = spval
+          this%baf_deforestf_col  (c) = spval
+!end---L. Xu @ 2017/11
           this%fbac_col           (c) = spval
           this%fbac1_col          (c) = spval
           this%farea_burned_col   (c) = spval
@@ -960,11 +1001,17 @@ contains
           ! fire related variables 
           this%baf_crop_col(c)       = 0._r8 
           this%baf_peatf_col(c)      = 0._r8 
+!beg---L. Xu @ 2017/11
+          this%baf_ncropf_col(c)     = 0._r8 
+          this%baf_deforestf_col(c)  = 0._r8 
+!end---L. Xu @ 2017/11
           this%fbac_col(c)           = 0._r8 
           this%fbac1_col(c)          = 0._r8 
           this%farea_burned_col(c)   = 0._r8 
 
           if (nsrest == nsrStartup) this%nfire_col(c) = 0._r8
+          if (nsrest == nsrStartup) this%nfire_In_col(c) = 0._r8
+          if (nsrest == nsrStartup) this%nfire_Ia_col(c) = 0._r8
 
           ! initialize fpi_vr so that levels below nlevsoi are not nans
           this%fpi_vr_col(c,1:nlevdecomp_full)          = 0._r8 

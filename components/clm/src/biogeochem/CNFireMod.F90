@@ -145,13 +145,34 @@ contains
     type(carbonstate_type)   , intent(inout) :: carbonstate_vars
     !
     ! !LOCAL VARIABLES:
+!L.Xu @ 2017/11/13
+    real(r8), parameter  :: Ia_alfa=0.0035_r8    !  global constant for ignition (count/person/hr), Li et al.(2012a, 2012b)
+    real(r8), parameter  :: theta_e=0.69_r8      !  extincition coefficient of soil wetness, Li et al.(2012a)
+!rev    real(r8), parameter  :: theta_e=0.345_r8      !  extincition coefficient of soil wetness, Li et al.(2012a)
+    real(r8), parameter  :: RHlo=30._r8         !  Lower bound of relative humidity (%) below which RH is no longer be a constraint factor of fire occurance, Li et al.(2012a)
+!rev    real(r8), parameter  :: RHlo=50._r8         !  Lower bound of relative humidity (%) below which RH is no longer be a constraint factor of fire occurance, Li et al.(2012a)
+    real(r8), parameter  :: RHup=80._r8         !  Upper bound of relative humidity (%) above which fires will not occur and spread, Li et al.(2012a)
+!rev    real(r8), parameter  :: RHup=90._r8         !  Upper bound of relative humidity (%) above which fires will not occur and spread, Li et al.(2012a)
+
+    real(r8), parameter  :: Beta_lo=0.3_r8         !  Lower bound of root zone soil moisture (?unit) below which soil moisture is no longer be a constraint factor of fire spread, Li et al.(2012a)
+!rev    real(r8), parameter  :: Beta_lo=0.15_r8         !  Lower bound of root zone soil moisture (?unit) below which soil moisture is no longer be a constraint factor of fire spread, Li et al.(2012a)
+    real(r8), parameter  :: Beta_up=0.7_r8         !  Upper bound of root zone soil moisture (?unit) above which fires will not spread, Li et al.(2012a)
+!rev    real(r8), parameter  :: Beta_up=0.9_r8         !  Upper bound of root zone soil moisture (?unit) above which fires will not spread, Li et al.(2012a)
+        
+! Li Xu @ 20171025
     real(r8), parameter  :: lfuel=75._r8    ! lower threshold of fuel mass (gC/m2) for ignition, Li et al.(2014)
+!rev    real(r8), parameter  :: lfuel=37.5_r8    ! lower threshold of fuel mass (gC/m2) for ignition, Li et al.(2014)
     real(r8), parameter  :: ufuel=1050._r8  ! upper threshold of fuel mass(gC/m2) for ignition 
+!rev    real(r8), parameter  :: ufuel=525._r8  ! upper threshold of fuel mass(gC/m2) for ignition 
     real(r8), parameter  :: g0=0.05_r8      ! g(W) when W=0 m/s
+!    real(r8), parameter  :: g0corr=1.0977_r8      ! g(W) correction factor to ensure that g(W) varies between 0 and 1 which is not the case in Li et al.(2012).the corrected g0=g0/g0corr
+    real(r8), parameter  :: g0corr=1._r8      ! g(W) correction factor to ensure that g(W) varies between 0 and 1 which is not the case in Li et al.(2012).the corrected g0=g0/g0corr
     !
     ! a1 parameter for cropland fire in (Li et. al., 2014), but changed from
     ! /timestep to /hr
+! Li Xu @ 20171025
     real(r8), parameter :: cropfire_a1 = 0.3_r8
+!rev    real(r8), parameter :: cropfire_a1 = 0.6_r8
     !
     ! c parameter for peatland fire in Li et. al. (2013)
     ! boreal peat fires (was different in paper),changed from /timestep to /hr
@@ -165,7 +186,9 @@ contains
     real(r8) :: m        ! top-layer soil moisture (proportion)
     real(r8) :: dayspyr  ! days per year
     real(r8) :: cli      ! effect of climate on deforestation fires (0-1)
+! Li Xu @ 20171025
     real(r8), parameter ::cli_scale = 0.035_r8   !global constant for deforestation fires (/d)
+!rev    real(r8), parameter ::cli_scale = 0.07_r8   !global constant for deforestation fires (/d)
     real(r8) :: cri      ! thresholds used for cli, (mm/d), see Eq.(7) in Li et al.(2013)
     real(r8) :: fb       ! availability of fuel for regs A and C
     real(r8) :: fhd      ! impact of hd on agricultural fire
@@ -216,13 +239,19 @@ contains
          abm_lf             =>    cnstate_vars%abm_lf_col                   , & ! Input:  [integer  (:)     ]  prescribed crop fire time                          
          baf_crop           =>    cnstate_vars%baf_crop_col                 , & ! Output: [real(r8) (:)     ]  burned area fraction for cropland (/sec)  
          baf_peatf          =>    cnstate_vars%baf_peatf_col                , & ! Output: [real(r8) (:)     ]  burned area fraction for peatland (/sec)  
+!beg---L. Xu@2017/11
+         baf_ncropf         =>    cnstate_vars%baf_ncropf_col               , & ! Output: [real(r8) (:)     ]  burned area fraction from non-peat fires (/sec)  
+         baf_deforestf      =>    cnstate_vars%baf_deforestf_col            , & ! Output: [real(r8) (:)     ]  burned area fraction from deforestation fires (/sec)  
+!end---L. Xu@2017/11
          burndate           =>    cnstate_vars%burndate_patch               , & ! Output: [integer  (:)     ]  burn date for crop                                 
          fbac               =>    cnstate_vars%fbac_col                     , & ! Output: [real(r8) (:)     ]  total burned area out of conversion (/sec)
          fbac1              =>    cnstate_vars%fbac1_col                    , & ! Output: [real(r8) (:)     ]  burned area out of conversion region due to land use fire
          farea_burned       =>    cnstate_vars%farea_burned_col             , & ! Output: [real(r8) (:)     ]  total fractional area burned (/sec)
          nfire              =>    cnstate_vars%nfire_col                    , & ! Output: [real(r8) (:)     ]  fire counts (count/km2/sec), valid only in Reg. C
-         fsr_col            =>    cnstate_vars%fsr_col                      , & ! Output: [real(r8) (:)     ]  fire spread rate at column level
-         fd_col             =>    cnstate_vars%fd_col                       , & ! Output: [real(r8) (:)     ]  fire duration rate at column level
+         nfire_In              =>    cnstate_vars%nfire_In_col                    , & ! Output: [real(r8) (:)     ]  fire counts (count/km2/sec), valid only in Reg. C
+         nfire_Ia              =>    cnstate_vars%nfire_Ia_col                    , & ! Output: [real(r8) (:)     ]  fire counts (count/km2/sec), valid only in Reg. C
+         fsr_col            =>    cnstate_vars%fsr_col                      , & ! Output: [real(r8) (:)     ]  fire spread rate at column level from lightning
+         fd_col             =>    cnstate_vars%fd_col                       , & ! Output: [real(r8) (:)     ]  fire duration rate at column level from human activities
          lgdp_col           =>    cnstate_vars%lgdp_col                     , & ! Output: [real(r8) (:)     ]  gdp limitation factor for nfire                   
          lgdp1_col          =>    cnstate_vars%lgdp1_col                    , & ! Output: [real(r8) (:)     ]  gdp limitation factor for baf per fire            
          lpop_col           =>    cnstate_vars%lpop_col                     , & ! Output: [real(r8) (:)     ]  pop limitation factor for baf per fire            
@@ -255,6 +284,9 @@ contains
          deadstemc_col      =>    carbonstate_vars%deadstemc_col            , & ! Output: [real(r8) (:)     ] dead stem carbon at column level
          fuelc              =>    carbonstate_vars%fuelc_col                , & ! Output: [real(r8) (:)     ]  fuel avalability factor for Reg.C                 
          fuelc_crop         =>    carbonstate_vars%fuelc_crop_col             & ! Output: [real(r8) (:)     ]  fuel avalability factor for Reg.A                 
+
+! added by Li Xu @ 10.20.2017 to diagnose variables associated with fire
+       
          )
  
       !pft to column average 
@@ -293,6 +325,10 @@ contains
            farea_burned(c) = 0._r8
            baf_crop(c)     = 0._r8
            baf_peatf(c)    = 0._r8
+!beg---L. Xu@2017/11
+           baf_ncropf(c)   = 0._r8
+           baf_deforestf(c)= 0._r8
+!end---L. Xu@2017/11
            fbac(c)         = 0._r8
            fbac1(c)        = 0._r8
            cropf_col(c)    = 0._r8 
@@ -402,6 +438,9 @@ contains
                       livecrootc_xfer(p))*veg_pp%wtcol(p)
 
                  fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c))
+!LXu for Qing's new start files using GSWP3 climate forcing data, half of the maximum fire spread rate declared in the param file
+!                 fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*0.5_r8*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c))
+!                 fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*2.0_r8*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c))
 
                  if( lfwt(c)  /=  0.0_r8 )then    
                     hdmlf=forc_hdm(g)
@@ -413,16 +452,27 @@ contains
                        if( veg_pp%itype(p)  /=  noveg )then
                           ! For shrub and grass (crop already excluded above)
                           if( veg_pp%itype(p)  >=  nbrdlf_evr_shrub )then      !for shurb and grass
+!L.Xu sensitivity test to tune the GDP and PD on the fire occurance and fire spread
                              lgdp_col(c)  = lgdp_col(c) + (0.1_r8 + 0.9_r8*    &
                                   exp(-1._r8*SHR_CONST_PI* &
                                   (gdp_lf(c)/8._r8)**0.5_r8))*veg_pp%wtcol(p) &
                                   /(1.0_r8 - cropf_col(c))
+!rev                             lgdp_col(c)  = lgdp_col(c) + (0.01_r8 + 0.99_r8*    &
+!                                  exp(-1._r8*SHR_CONST_PI* &
+!                                  (gdp_lf(c)/8._r8)**0.5_r8))*veg_pp%wtcol(p) &
+!                                  /(1.0_r8 - cropf_col(c))
                              lgdp1_col(c) = lgdp1_col(c) + (0.2_r8 + 0.8_r8*   &
                                   exp(-1._r8*SHR_CONST_PI* &
                                   (gdp_lf(c)/7._r8)))*veg_pp%wtcol(p)/lfwt(c)
+! rev                            lgdp1_col(c) = lgdp1_col(c) + (0.1_r8 + 0.9_r8*   &
+!                                  exp(-1._r8*SHR_CONST_PI* &
+!                                  (gdp_lf(c)/7._r8)))*veg_pp%wtcol(p)/lfwt(c)
                              lpop_col(c)  = lpop_col(c) + (0.2_r8 + 0.8_r8*    &
                                   exp(-1._r8*SHR_CONST_PI* &
                                   (hdmlf/450._r8)**0.5_r8))*veg_pp%wtcol(p)/lfwt(c)
+! rev                            lpop_col(c)  = lpop_col(c) + (0.1_r8 + 0.9_r8*    &
+!                                  exp(-1._r8*SHR_CONST_PI* &
+!                                  (hdmlf/450._r8)**0.5_r8))*veg_pp%wtcol(p)/lfwt(c)
                           else   ! for trees
                              if( gdp_lf(c)  >  20._r8 )then
                                 lgdp_col(c)  =lgdp_col(c)+0.39_r8*veg_pp%wtcol(p)/(1.0_r8 - cropf_col(c))
@@ -451,6 +501,8 @@ contains
                  end if
 
                  fd_col(c) = fd_col(c) + fd_pft(veg_pp%itype(p)) * veg_pp%wtcol(p) * secsphr / (1.0_r8-cropf_col(c))         
+!L.Xu@2017/12-double the fire duration to 48 hours.
+!                 fd_col(c) = fd_col(c) + fd_pft(veg_pp%itype(p)) *2.0_r8 * veg_pp%wtcol(p) * secsphr / (1.0_r8-cropf_col(c))         
               end if
            end if
         end do
@@ -480,6 +532,9 @@ contains
      do fc = 1,num_soilc
         c = filter_soilc(fc)
         baf_crop(c)=0._r8
+!L.Xu@2017/11
+        baf_ncropf(c)=0._r8
+        baf_deforestf(c)=0._r8
      end do
 
      do fp = 1,num_soilp
@@ -562,7 +617,12 @@ contains
         if( cropf_col(c)  <  1.0 )then
            if (trotr1_col(c)+trotr2_col(c)>0.6_r8) then
               farea_burned(c)=min(1.0_r8,baf_crop(c)+baf_peatf(c))
+!beg---L. Xu @ 2017/11
+!              baf_ncropf(c) = max(0._r8,farea_burned(c)-baf_crop(c)-baf_peatf(c))
+!              baf_deforestf(c) = 0._r8
+!end---L. Xu @ 2017/11
            else
+!non-peat fires
               fuelc(c) = totlitc(c)+totvegc_col(c)-rootc_col(c)-fuelc_crop(c)*cropf_col(c)
               if (spinup_state == 1) fuelc(c) = fuelc(c) + ((spinup_mortality_factor - 1._r8)*deadstemc_col(c))
               do j = 1, nlevdecomp 
@@ -579,38 +639,73 @@ contains
               fuelc(c) = fuelc(c)/(1._r8-cropf_col(c))
               fb       = max(0.0_r8,min(1.0_r8,(fuelc(c)-lfuel)/(ufuel-lfuel)))
               m        = max(0._r8,wf(c))
-              fire_m   = exp(-SHR_CONST_PI *(m/0.69_r8)**2)*(1.0_r8 - max(0._r8, &
-                   min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))*  &
+! Li Xu @ 20171025 test RHlow=50%
+!org             fire_m   = exp(-SHR_CONST_PI *(m/0.69_r8)**2)*(1.0_r8 - max(0._r8, &
+!                   min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))*  &
+!                   min(1._r8,exp(SHR_CONST_PI*(forc_t(c)-SHR_CONST_TKFRZ)/10._r8))
+             fire_m   = exp(-SHR_CONST_PI *(m/theta_e)**2)*(1.0_r8 - max(0._r8, &
+                   min(1._r8,(forc_rh(g)-RHlo)/(RHup-RHlo))))*  &
                    min(1._r8,exp(SHR_CONST_PI*(forc_t(c)-SHR_CONST_TKFRZ)/10._r8))
-              lh       = 0.0035_r8*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
+!rev              fire_m   = exp(-SHR_CONST_PI *(m/0.69_r8)**2)*(1.0_r8 - max(0._r8, &
+!                   min(1._r8,(forc_rh(g)-50._r8)/(80._r8-50._r8))))*  &
+!                   min(1._r8,exp(SHR_CONST_PI*(forc_t(c)-SHR_CONST_TKFRZ)/10._r8))
+! by Li Xu @ 20171025
+! modify Ia global constant alfa from 0.0035 to 9.72e-4 accoring to Li et al. 2012b
+! notes:lh unit is count/km2/hr!
+!org              lh       = 0.0035_r8*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
+              lh       = Ia_alfa*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
+!rev              lh       = 0.000972_r8*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
               fs       = 1._r8-(0.01_r8+0.98_r8*exp(-0.025_r8*hdmlf))
+!L.Xu assuming epsilon1 = 0.89, epsilon1-epsilon2 = 0.01, then epsilon2 = 0.88
+!rev              fs       = 1._r8-(0.11_r8+0.88_r8*exp(-0.025_r8*hdmlf))
               ig       = (lh+forc_lnfm(g)/(5.16_r8+2.16_r8*cos(3._r8*grc_pp%lat(g)))*0.25_r8)*(1._r8-fs)*(1._r8-cropf_col(c)) 
               nfire(c) = ig/secsphr*fb*fire_m*lgdp_col(c) !fire counts/km2/sec
+!L.Xu@2017/11/17
+              nfire_In(c) = (forc_lnfm(g)/(5.16_r8+2.16_r8*cos(3._r8*grc_pp%lat(g)))*0.25_r8)*(1._r8-fs)*(1._r8-cropf_col(c)) &
+	                     /secsphr*fb*fire_m*lgdp_col(c)!fire counts/km2/sec
+              nfire_Ia(c) = lh *(1._r8-fs)*(1._r8-cropf_col(c))&
+	                     /secsphr*fb*fire_m*lgdp_col(c) !fire counts/km2/sec
               Lb_lf    = 1._r8+10.0_r8*(1._r8-EXP(-0.06_r8*forc_wind(g)))
               if ( wtlf(c) > 0.0_r8 )then
-                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-0.3_r8)/ &
-                      (0.7_r8-0.3_r8))))*(1.0_r8-max(0._r8, &
-                      min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))
+	      ! Cm = C_betra * C_RH
+!org                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-0.3_r8)/ &
+!                      (0.7_r8-0.3_r8))))*(1.0_r8-max(0._r8, &
+!                      min(1._r8,(forc_rh(g)-RHlo)/(RHup-RHlo))))
+                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-Beta_lo)/ &
+                      (Beta_up-Beta_lo))))*(1.0_r8-max(0._r8, &
+                      min(1._r8,(forc_rh(g)-RHlo)/(RHup-RHlo))))
               else
                  spread_m = 0.0_r8
               end if
-              farea_burned(c) = min(1._r8,(g0*spread_m*fsr_col(c)* &
+              farea_burned(c) = min(1._r8,(g0/g0corr*spread_m*fsr_col(c)* &
                    fd_col(c)/1000._r8)**2*lgdp1_col(c)* &
                    lpop_col(c)*nfire(c)*SHR_CONST_PI*Lb_lf+ &
                    baf_crop(c)+baf_peatf(c))  ! fraction (0-1) per sec
-           end if
+!beg---L. Xu @ 2017/11
+	      baf_ncropf(c) = baf_ncropf(c) + max(0._r8,farea_burned(c)-baf_crop(c)-baf_peatf(c))	   
+!              baf_deforestf(c) = 0._r8
+!end---L. Xu @ 2017/11
+          end if
            !
            ! if landuse change data is used, calculate deforestation fires and 
            ! add it in the total of burned area fraction
            !
+!L.Xu the criteria to determine deforestation fires is trotr1_col(c)+trotr2_col(c) > 0.6_r8
            if (flanduse_timeseries /= ' ') then    !true when landuse change data is used
               if( trotr1_col(c)+trotr2_col(c) > 0.6_r8 )then
                  if(( kmo == 1 .and. kda == 1 .and. mcsec == 0) .or. &
                       dtrotr_col(c) <=0._r8 )then
                     fbac1(c)        = 0._r8
                     farea_burned(c) = baf_crop(c)+baf_peatf(c)
+!beg---L. Xu @ 2017/11
+!		    baf_ncropf(c) = max(0._r8,farea_burned(c) - (baf_crop(c)+baf_peatf(c)))
+!		    baf_deforestf = 0._r8
+!end---L. Xu @ 2017/11
                  else
-                    cri = (4.0_r8*trotr1_col(c)+1.8_r8*trotr2_col(c))/(trotr1_col(c)+trotr2_col(c))
+! deforestation fires
+! Li Xu @ 20171025
+                    cri = (8.0_r8*trotr1_col(c)+3.6_r8*trotr2_col(c))/(trotr1_col(c)+trotr2_col(c))
+!rev                    cri = (4.0_r8*trotr1_col(c)+1.8_r8*trotr2_col(c))/(trotr1_col(c)+trotr2_col(c))
                     cli = (max(0._r8,min(1._r8,(cri-prec60_col(c)*secspday)/cri))**0.5)* &
                          (max(0._r8,min(1._r8,(cri-prec10_col(c)*secspday)/cri))**0.5)* &
                          max(0.0005_r8,min(1._r8,19._r8*dtrotr_col(c)*dayspyr*secspday/dt-0.001_r8))* &
@@ -618,6 +713,10 @@ contains
                     farea_burned(c) = cli*(cli_scale/secspday)+baf_crop(c)+baf_peatf(c)
                     ! burned area out of conversion region due to land use fire
                     fbac1(c) = max(0._r8,cli*(cli_scale/secspday) - 2.0_r8*lfc(c)/dt)   
+!beg---L. Xu @ 2017/11
+!		    baf_ncropf(c) = 0._r8
+		    baf_deforestf(c) =  baf_deforestf(c) + max(0._r8,farea_burned(c) - (baf_crop(c)+baf_peatf(c)))
+!end---L. Xu @ 2017/11
                  end if
                  ! total burned area out of conversion 
                  fbac(c) = fbac1(c)+baf_crop(c)+baf_peatf(c) 
@@ -628,6 +727,10 @@ contains
 
         else
            farea_burned(c) = min(1._r8,baf_crop(c)+baf_peatf(c))
+!beg---L. Xu @ 2017/11
+!           baf_ncropf(c) = max(0._r8,farea_burned(c) - (baf_crop(c)+baf_peatf(c)))
+!           baf_deforestf = 0._r8
+!end---L. Xu @ 2017/11
         end if
 
         if (use_nofire) then
@@ -636,6 +739,10 @@ contains
            farea_burned(c) = 0._r8
            baf_crop(c)     = 0._r8
            baf_peatf(c)    = 0._r8
+!beg---L. Xu @ 2017/11
+           baf_ncropf(c)   = 0._r8
+           baf_deforestf(c)= 0._r8
+!end---L. Xu @ 2017/11
            fbac(c)         = 0._r8
            fbac1(c)        = 0._r8
            ! with NOFIRE, tree carbon is still removed in landuse change regions by the
@@ -1015,7 +1122,7 @@ contains
         c = veg_pp%column(p)
 
         if( veg_pp%itype(p) < nc3crop .and. cropf_col(c) < 1.0_r8)then
-           ! For non-crop (bare-soil and natural vegetation)
+           ! For non-crop (bare-soil and natural vegetation, including trees, shrubs and grass)
            if (flanduse_timeseries /= ' ') then    !true when landuse data is used
               f = (fbac(c)-baf_crop(c))/(1.0_r8-cropf_col(c))
            else
@@ -1032,7 +1139,7 @@ contains
 
         ! apply this rate to the pft state variables to get flux rates
         ! biomass burning
-        ! carbon fluxes
+        ! carbon fluxes (g/m2/s) = BA (fraction/sec)/Vegetation_Cover (-) * Carbon_Density ( g/m2) * CC for each PFT
 
 	m_veg = 1.0_r8
         if (spinup_state == 1) m_veg = spinup_mortality_factor
@@ -1296,10 +1403,12 @@ contains
                  p = col_pp%pfti(c) + pi - 1
                  if ( veg_pp%active(p) ) then
 
+                    ! carbon
                     fire_mortality_c_to_cwdc(c,j) = fire_mortality_c_to_cwdc(c,j) + &
                          m_deadstemc_to_litter_fire(p) * veg_pp%wtcol(p) * stem_prof(p,j)
                     fire_mortality_c_to_cwdc(c,j) = fire_mortality_c_to_cwdc(c,j) + &
                          m_deadcrootc_to_litter_fire(p) * veg_pp%wtcol(p) * croot_prof(p,j)
+                    ! nitrogen
                     fire_mortality_n_to_cwdn(c,j) = fire_mortality_n_to_cwdn(c,j) + &
                          m_deadstemn_to_litter_fire(p) * veg_pp%wtcol(p) * stem_prof(p,j)
                     fire_mortality_n_to_cwdn(c,j) = fire_mortality_n_to_cwdn(c,j) + &
@@ -1310,11 +1419,12 @@ contains
                     fire_mortality_p_to_cwdp(c,j) = fire_mortality_p_to_cwdp(c,j) + &
                          m_deadcrootp_to_litter_fire(p) * veg_pp%wtcol(p) * croot_prof(p,j)
 
-
+                    ! carbon
                     fire_mortality_c_to_cwdc(c,j) = fire_mortality_c_to_cwdc(c,j) + &
                          m_livestemc_to_litter_fire(p) * veg_pp%wtcol(p) * stem_prof(p,j)
                     fire_mortality_c_to_cwdc(c,j) = fire_mortality_c_to_cwdc(c,j) + &
                          m_livecrootc_to_litter_fire(p) * veg_pp%wtcol(p) * croot_prof(p,j)
+                    ! nitrogen
                     fire_mortality_n_to_cwdn(c,j) = fire_mortality_n_to_cwdn(c,j) + &
                          m_livestemn_to_litter_fire(p) * veg_pp%wtcol(p) * stem_prof(p,j)
                     fire_mortality_n_to_cwdn(c,j) = fire_mortality_n_to_cwdn(c,j) + &
@@ -1460,6 +1570,14 @@ contains
 
         end do
      end do  ! end of column loop
+
+!---L Xu @ 2017/11
+   ! Total fire carbon emissions (g C/m2 land area/yr) 
+   !  =avg(COL_FIRE_CLOSS)*seconds_per_year 
+   ! + avg(SOMC_FIRE)*seconds_per_year 
+   ! + avg(LF_CONV_CFLUX)*seconds_per_year*min(1.0,avg(LFC2)*seconds_per_year)*0.8
+   ! where avg means the temporal average in a year
+   ! seconds_per_year is the number of seconds in a year.
 
      ! carbon loss due to deforestation fires
 
