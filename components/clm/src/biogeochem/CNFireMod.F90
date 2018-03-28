@@ -130,6 +130,13 @@ contains
     use dynSubgridControlMod , only: run_has_transient_landcover
     use pftvarcon            , only: nc4_grass, nc3crop, ndllf_evr_tmp_tree
     use pftvarcon            , only: nbrdlf_evr_trp_tree, nbrdlf_dcd_trp_tree, nbrdlf_evr_shrub
+!L.Xu@03/2018
+    use pftvarcon            , only: Ia_alfa, RH_lo, RH_up, Beta_lo, fsr_factor, fire_du
+    use pftvarcon            , only: Ia_alfa_grid, RH_lo_grid, RH_up_grid 
+    use pftvarcon            , only: Beta_lo_grid, fsr_factor_grid, fire_du_grid
+    use pftvarcon            , only: Ia_alfa_grid_present, RH_lo_grid_present, RH_up_grid_present
+    use pftvarcon            , only: Beta_lo_grid_present, fsr_factor_grid_present, fire_du_grid_present
+
     !
     ! !ARGUMENTS:
     type(bounds_type)        , intent(in)    :: bounds 
@@ -149,6 +156,8 @@ contains
     real(r8), parameter  :: lfuel=75._r8    ! lower threshold of fuel mass (gC/m2) for ignition, Li et al.(2014)
     real(r8), parameter  :: ufuel=1050._r8  ! upper threshold of fuel mass(gC/m2) for ignition 
     real(r8), parameter  :: g0=0.05_r8      ! g(W) when W=0 m/s
+!L.Xu@03/2018
+    real(r8), parameter  :: g0corr=1.0977_r8      ! g(W) correction factor to ensure that g(W) varies between 0 and 1 which is not the case in Li et al.(2012).the corrected g0=g0/g0corr
     !
     ! a1 parameter for cropland fire in (Li et. al., 2014), but changed from
     ! /timestep to /hr
@@ -185,6 +194,11 @@ contains
     real(r8), target  :: prec10_col_target(bounds%begc:bounds%endc)
     real(r8), pointer :: prec60_col(:)
     real(r8), pointer :: prec10_col(:)
+!L.Xu@03/2018
+    real(r8) :: Ia_alfa_local, RH_lo_local, RH_up_local
+    real(r8) :: Beta_lo_local, fsr_factor_local, fire_du_local
+    integer  :: gg
+        
     !-----------------------------------------------------------------------
 
     associate(                                                                & 
@@ -405,7 +419,17 @@ contains
                       livecrootc(p)+livecrootc_storage(p) +           &
                       livecrootc_xfer(p))*veg_pp%wtcol(p)
 
-                 fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c))
+!L.Xu@03/2018====
+!org                 fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c))
+                 if (fsr_factor_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     fsr_factor_local = fsr_factor_grid(gg)
+                 else
+                     fsr_factor_local = fsr_factor(veg_pp%itype(p))
+                 endif
+		 
+                 fsr_col(c) = fsr_col(c) + fsr_pft(veg_pp%itype(p))*veg_pp%wtcol(p)/(1.0_r8-cropf_col(c)) * fsr_factor_local
+!L.Xu@03/2018====
 
                  if( lfwt(c)  /=  0.0_r8 )then    
                     hdmlf=forc_hdm(g)
@@ -454,7 +478,17 @@ contains
                     end if
                  end if
 
-                 fd_col(c) = fd_col(c) + fd_pft(veg_pp%itype(p)) * veg_pp%wtcol(p) * secsphr / (1.0_r8-cropf_col(c))         
+!L.Xu@03/2018====
+!org                 fd_col(c) = fd_col(c) + fd_pft(veg_pp%itype(p)) * veg_pp%wtcol(p) * secsphr / (1.0_r8-cropf_col(c))         
+                 if (fire_du_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     fire_du_local = fire_du_grid(gg)
+                 else
+                     fire_du_local = fire_du(veg_pp%itype(p))
+                 endif
+
+                 fd_col(c) = fd_col(c) + fire_du_local * veg_pp%wtcol(p) * secsphr / (1.0_r8-cropf_col(c))         
+!L.Xu@03/2018====
               end if
            end if
         end do
@@ -586,19 +620,50 @@ contains
               fire_m   = exp(-SHR_CONST_PI *(m/0.69_r8)**2)*(1.0_r8 - max(0._r8, &
                    min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))*  &
                    min(1._r8,exp(SHR_CONST_PI*(forc_t(c)-SHR_CONST_TKFRZ)/10._r8))
-              lh       = 0.0035_r8*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
+
+!L.Xu@03/2018====
+                 if (Ia_alfa_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     Ia_alfa_local = Ia_alfa_grid(gg)
+                 else
+                     Ia_alfa_local = Ia_alfa(veg_pp%itype(p))
+                 endif
+                 if (RH_lo_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     RH_lo_local      = RH_lo_grid(gg)
+                 else
+                     RH_lo_local = RH_lo(veg_pp%itype(p))
+                 endif
+                 if (RH_up_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     RH_up_local = RH_up_grid(gg)
+                 else
+                    RH_up_local = RH_up(veg_pp%itype(p))
+                 endif
+                 if (Beta_lo_grid_present) then
+                     gg               = col_pp%gridcell(c)
+                     Beta_lo_local = Beta_lo_grid(gg)
+                 else
+                     Beta_lo_local = Beta_lo(veg_pp%itype(p))
+                 endif
+!org              lh       = 0.0035_r8*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
+              lh       = Ia_alfa_local*6.8_r8*hdmlf**(0.43_r8)/30._r8/24._r8
               fs       = 1._r8-(0.01_r8+0.98_r8*exp(-0.025_r8*hdmlf))
               ig       = (lh+forc_lnfm(g)/(5.16_r8+2.16_r8*cos(3._r8*grc_pp%lat(g)))*0.25_r8)*(1._r8-fs)*(1._r8-cropf_col(c)) 
               nfire(c) = ig/secsphr*fb*fire_m*lgdp_col(c) !fire counts/km2/sec
               Lb_lf    = 1._r8+10.0_r8*(1._r8-EXP(-0.06_r8*forc_wind(g)))
               if ( wtlf(c) > 0.0_r8 )then
-                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-0.3_r8)/ &
-                      (0.7_r8-0.3_r8))))*(1.0_r8-max(0._r8, &
-                      min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))
+!org                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-0.3_r8)/ &
+!                      (0.7_r8-0.3_r8))))*(1.0_r8-max(0._r8, &
+!                      min(1._r8,(forc_rh(g)-30._r8)/(80._r8-30._r8))))
+                 spread_m = (1.0_r8 - max(0._r8,min(1._r8,(btran_col(c)/wtlf(c)-Beta_lo_local)/ &
+                      (0.7_r8-Beta_lo_local))))*(1.0_r8-max(0._r8, &
+                      min(1._r8,(forc_rh(g)-RH_lo_local)/(RH_up_local-RH_lo_local))))
               else
                  spread_m = 0.0_r8
               end if
-              farea_burned(c) = min(1._r8,(g0*spread_m*fsr_col(c)* &
+!org              farea_burned(c) = min(1._r8,(g0*spread_m*fsr_col(c)* &
+              farea_burned(c) = min(1._r8,(g0/g0corr*spread_m*fsr_col(c)* &
                    fd_col(c)/1000._r8)**2*lgdp1_col(c)* &
                    lpop_col(c)*nfire(c)*SHR_CONST_PI*Lb_lf+ &
                    baf_crop(c)+baf_peatf(c))  ! fraction (0-1) per sec
