@@ -2286,6 +2286,7 @@ contains
     vsize = fullsize / gsize
     if (mod(fullsize,gsize) /= 0) then
        write(iulog,*) subname,' ERROR in vsize ',fullsize,gsize,vsize
+!lxu       write(iulog,*) subname,' ERROR in vsize ',fullsize,gsize,vsize,dims
        call shr_sys_abort(errMsg(__FILE__, __LINE__))
     endif
 

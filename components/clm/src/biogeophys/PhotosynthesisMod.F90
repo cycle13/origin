@@ -73,6 +73,7 @@ contains
     use clm_varctl     , only : cnallocate_carbon_only 
     use pftvarcon      , only : nbrdlf_dcd_tmp_shrub, nsoybean, nsoybeanirrig, npcropmin
     use pftvarcon      , only : vcmax_np1, vcmax_np2, vcmax_np3, vcmax_np4, jmax_np1, jmax_np2, jmax_np3
+!lxu
     use pftvarcon      , only : vcmax_np1_grid, vcmax_np1_grid_present
     use pftvarcon      , only : vcmax_np2_grid, vcmax_np2_grid_present
     use pftvarcon      , only : vcmax_np3_grid, vcmax_np3_grid_present

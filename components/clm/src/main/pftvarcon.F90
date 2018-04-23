@@ -268,6 +268,7 @@ module pftvarcon
   ! Hydrology
   real(r8)              :: rsub_top_globalmax
 
+
   ! spatially heterogeneous parameter
   real(r8), pointer     :: vcmax_np1_grid(:)         ! vcmax~np relationship coefficient
   real(r8), pointer     :: vcmax_np2_grid(:)         ! vcmax~np relationship coefficient
@@ -286,28 +287,6 @@ module pftvarcon
   logical               :: vmax_nfix_grid_present      ! flag for vmax_nfix_grid
   logical               :: vmax_ptase_grid_present     ! flag for vmax_ptase_grid
   logical               :: km_plant_p_grid_present     ! flag for km_plant_p_grid
-
-!L. Xu added for tuning fire model parameters @ 03/2018
-  real(r8), allocatable :: Ia_alfa(:)        !vcmax~np relationship coefficient
-  real(r8), allocatable :: RH_lo(:)        !vcmax~np relationship coefficient
-  real(r8), allocatable :: RH_up(:)        !vcmax~np relationship coefficient
-  real(r8), allocatable :: Beta_lo(:)        !vcmax~np relationship coefficient
-  real(r8), allocatable :: fsr_factor(:)        !vcmax~np relationship coefficient
-  real(r8), allocatable :: fire_du(:)        !vcmax~np relationship coefficient
-
-  real(r8), pointer     :: Ia_alfa_grid(:)         ! vcmax~np relationship coefficient
-  real(r8), pointer     :: RH_lo_grid(:)         ! vcmax~np relationship coefficient
-  real(r8), pointer     :: RH_up_grid(:)         ! vcmax~np relationship coefficient
-  real(r8), pointer     :: Beta_lo_grid(:)         ! vcmax~np relationship coefficient
-  real(r8), pointer     :: fsr_factor_grid(:)         ! vcmax~np relationship coefficient
-  real(r8), pointer     :: fire_du_grid(:)         ! vcmax~np relationship coefficient
-
-  logical               :: Ia_alfa_grid_present      ! flag for vcmax_np1_grid
-  logical               :: RH_lo_grid_present      ! flag for vcmax_np2_grid
-  logical               :: RH_up_grid_present      ! flag for vcmax_np3_grid
-  logical               :: Beta_lo_grid_present   ! flag for vcmax_plant_p_grid
-  logical               :: fsr_factor_grid_present ! flag for vmax_plant_nh4_grid
-  logical               :: fire_du_grid_present      ! flag for vmax_nfix_grid
 
   !
   ! !PUBLIC MEMBER FUNCTIONS:
@@ -567,13 +546,6 @@ contains
     allocate( mbbopt             (0:mxpft) )
     allocate( nstor              (0:mxpft) )
     allocate( br_xr              (0:mxpft) )
-    ! Fire Model by L.Xu@03/2018
-    allocate( Ia_alfa            (0:mxpft) )
-    allocate( RH_lo              (0:mxpft) )
-    allocate( RH_up              (0:mxpft) )
-    allocate( Beta_lo            (0:mxpft) )
-    allocate( fsr_factor         (0:mxpft) )
-    allocate( fire_du            (0:mxpft) )
     
     ! Set specific vegetation type values
 
@@ -913,19 +885,6 @@ contains
         if ( .not. readv ) call endrun(msg=' ERROR: error in reading in vcmax_np data'//errMsg(__FILE__, __LINE__))
         call ncd_io('laimax',laimax, 'read', ncid, readvar=readv, posNOTonfile=.true.)
         if ( .not. readv ) call endrun(msg=' ERROR: error in reading in laimax data'//errMsg(__FILE__, __LINE__))
-!L.Xu@03/2018
-!        call ncd_io('Ia_alfa',Ia_alfa, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in Ia_alfa data'//errMsg(__FILE__, __LINE__))
-!        call ncd_io('RH_lo',RH_lo, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in RH_lo data'//errMsg(__FILE__, __LINE__))
-!        call ncd_io('RH_up',RH_up, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in RH_up data'//errMsg(__FILE__, __LINE__))
-!        call ncd_io('Beta_lo',Beta_lo, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in Beta_lo data'//errMsg(__FILE__, __LINE__))
-!        call ncd_io('fsr_factor',fsr_factor, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in fsr_factor data'//errMsg(__FILE__, __LINE__))
-!        call ncd_io('fire_du',fire_du, 'read', ncid, readvar=readv, posNOTonfile=.true.)
-!        if ( .not. readv ) call endrun(msg=' ERROR: error in reading in fire_du data'//errMsg(__FILE__, __LINE__))
 
     end if
     call ncd_io('rsub_top_globalmax', rsub_top_globalmax, 'read', ncid, readvar=readv, posNOTonfile=.true.)
@@ -990,104 +949,6 @@ contains
 
     call getfil (fsurdat, locfn, 0)
     call ncd_pio_openfile (ncid, locfn, 0)
-!L.Xu@03/2018======
-    ! 1) Ia_alfa
-    call ncd_inqvid(ncid,'Ia_alfa', varid, var_desc, readv)
-    if (readv) then
-       allocate(Ia_alfa_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='Ia_alfa', flag='read', data=Ia_alfa_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading Ia_alfa from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       Ia_alfa_grid_present = .true.
-
-    else
-       nullify(Ia_alfa_grid)
-       Ia_alfa_grid_present = .false.
-    endif
-
-    ! 2) RH_lo
-    call ncd_inqvid(ncid,'RH_lo', varid, var_desc, readv)
-    if (readv) then
-       allocate(RH_lo_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='RH_lo', flag='read', data=RH_lo_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading RH_lo from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       RH_lo_grid_present = .true.
-
-    else
-       nullify(RH_lo_grid)
-       RH_lo_grid_present = .false.
-    endif
-
-    ! 3) RH_up
-    call ncd_inqvid(ncid,'RH_up', varid, var_desc, readv)
-    if (readv) then
-       allocate(RH_up_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='RH_up', flag='read', data=RH_up_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading RH_up from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       RH_up_grid_present = .true.
-
-    else
-       nullify(RH_up_grid)
-       RH_up_grid_present = .false.
-    endif
-
-    ! 4) Beta_lo
-    call ncd_inqvid(ncid,'Beta_lo', varid, var_desc, readv)
-    if (readv) then
-       allocate(Beta_lo_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='Beta_lo', flag='read', data=Beta_lo_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading Beta_lo from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       Beta_lo_grid_present = .true.
-
-    else
-       nullify(Beta_lo_grid)
-       Beta_lo_grid_present = .false.
-    endif
-
-    ! 5) fsr_factor
-    call ncd_inqvid(ncid,'fsr_factor', varid, var_desc, readv)
-    if (readv) then
-       allocate(fsr_factor_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='fsr_factor', flag='read', data=fsr_factor_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading fsr_factor from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       fsr_factor_grid_present = .true.
-
-    else
-       nullify(fsr_factor_grid)
-       fsr_factor_grid_present = .false.
-    endif
-
-    ! 6) fire_du
-    call ncd_inqvid(ncid,'fire_du', varid, var_desc, readv)
-    if (readv) then
-       allocate(fire_du_grid(begg:endg))
-
-       call ncd_io(ncid=ncid, varname='fire_du', flag='read', data=fire_du_grid, dim1name=grlnd, readvar=readv)
-       if (.not. readv) then
-          call endrun(msg=' ERROR while reading fire_du from surfdata file'//errMsg(__FILE__, __LINE__))
-       end if
-       fire_du_grid_present = .true.
-
-    else
-       nullify(fire_du_grid)
-       fire_du_grid_present = .false.
-    endif
-
-!L.Xu@03/2018======
 
     ! 1) vcmax_np1
     call ncd_inqvid(ncid,'vcmax_np1', varid, var_desc, readv)
@@ -1304,6 +1165,7 @@ contains
     end if
 
     if (masterproc) then
+
        write(iulog,*) 'Spatially heterogeneous parameters:'
        write(iulog,*) ' vcmax_np1_grid_present      = ',vcmax_np1_grid_present
        write(iulog,*) ' vcmax_np2_grid_present      = ',vcmax_np2_grid_present
@@ -1314,16 +1176,6 @@ contains
        write(iulog,*) ' vmax_ptase_grid_present     = ',vmax_ptase_grid_present
        write(iulog,*) ' km_plant_p_grid_present     = ',km_plant_p_grid_present
        write(iulog,*) 'Successfully read PFT physiological data'
-       write(iulog,*)
-!L.Xu@03/2018
-       write(iulog,*) 'Spatially heterogeneous parameters for fire model:'
-       write(iulog,*) ' Ia_alfa_grid_present     = ',Ia_alfa_grid_present
-       write(iulog,*) ' RH_lo_grid_present     = ',RH_lo_grid_present
-       write(iulog,*) ' RH_up_grid_present     = ',RH_up_grid_present
-       write(iulog,*) ' Beta_lo_grid_present     = ',Beta_lo_grid_present
-       write(iulog,*) ' fsr_factor_grid_present     = ',fsr_factor_grid_present
-       write(iulog,*) ' fire_du_grid_present     = ',fire_du_grid_present
-       write(iulog,*) 'Successfully read fire tuning parameter data'
        write(iulog,*)
     end if
 
